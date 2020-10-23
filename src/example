@@ -1,0 +1,18 @@
+using MusicTransformer
+
+# Data size
+word_size = 10
+sequence_length = 20
+num_instruments = 4
+
+# Model size
+N = 6
+head_count = 8
+latent_size = 32
+
+
+song = rand(word_size, sequence_length, num_instruments)
+
+model = Transformer(N, head_count, latent_size, word_size)
+
+prediction = model(song, get_positional_data(song))
