@@ -13,3 +13,26 @@ To remedy this, I simply put the LayerNorm as the first part of each sublayer. I
 Finally, I move the positional encoding into the Attention calculation, like in TransformerXL. This is based on the assumption that you cannot predict how words/pitches are related along the sequence dimension without having first figured out which words/pitches are related at all (imagine trying to figure out the rhythm of a song you haven't heard yet).</p>
 
 ![Image of simplified architecture](https://github.com/MacKenzieHnC/MusicTransformer.jl/blob/main/architecture/MyTransformerArchitecture.png?raw=true)
+
+<h2>Example</h2>
+
+```Julia
+using MusicTransformer
+
+# Data size
+word_size = 10
+sequence_length = 20
+num_instruments = 4
+
+# Model size
+N = 6
+head_count = 8
+latent_size = 32
+
+
+song = rand(word_size, sequence_length, num_instruments)
+
+model = Transformer(N, head_count, latent_size, word_size)
+
+prediction = model(song, get_positional_data(song))
+```
