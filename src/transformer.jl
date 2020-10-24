@@ -1,6 +1,5 @@
 using Flux
 using TensorCast
-using CUDA: CuArray
 
 ## Attention
 
@@ -234,7 +233,7 @@ function (a::Transformer)(encoder_input,
                             decoder_input = nothing)
     encoder, decoder = a.encoder, a.decoder
 
-    if decoder_input = nothing
+    if decoder_input == nothing
         decoder_input = encoder_input
     end
 
