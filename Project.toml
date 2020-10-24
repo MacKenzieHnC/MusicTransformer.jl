@@ -2,3 +2,7 @@ name = "MusicTransformer"
 uuid = "19342aef-71ab-4ed6-a51e-d8531d8abdb4"
 authors = ["MacKenzieHnC <MacKenzieHnC@gmail.com>"]
 version = "0.1.0"
+
+[deps]
+Flux = "587475ba-b771-5e3f-ad9e-33799f191a9c"
+TensorCast = "02d47bb6-7ce6-556a-be16-bb1710789e2b"
