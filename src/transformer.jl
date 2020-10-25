@@ -63,7 +63,8 @@ Flux.@functor Attention
 function (a::Attention)(
     query_data::AbstractArray,
     pos_data::AbstractArray;
-    key_data = nothing::Union{Nothing,AbstractArray}
+    key_data = nothing::Union{Nothing,AbstractArray},
+    mask = nothing::Union{Nothing,AbstractArray}
 )
     W_Q, W_K, W_V, W_P, W_H = a.W_Q, a.W_K, a.W_V, a.W_P, a.W_H
 
@@ -74,10 +75,10 @@ function (a::Attention)(
 
     # Perform the first 4 linear projections
     @reduce my_values[head,meaning,time,ins] := sum(word) W_V[head,meaning,word] * key_data[word,time,ins]
-    @reduce my_queries[head,meaning,time,ins] := sum(word) W_Q[head,meaning,word] * query_data[word,time,ins]
     @reduce my_keys[head,meaning,time,ins] := sum(word) W_K[head,meaning,word] * key_data[word,time,ins]
     @reduce my_pos[head,meaning,time,ins] := sum(word) W_P[head,meaning,word] * pos_data[word,time,ins]
-
+    @reduce my_queries[head,meaning,time,ins] := sum(word) W_Q[head,meaning,word] * query_data[word,time,ins]
+    
     # For every word in the query projection (i, j)
     # Add the key projection to the relevant section of the position projection
     # Then multiply by the (i, j)th query projection
@@ -111,27 +112,27 @@ function (a::Attention)(
     end
 
     # Scale scores, and take the softmax over all query/key timesteps/instruments
-    scaling_factor = sqrt(sum(size(my_keys)))
-    temp = reshape(
-        scores,
-        (
-            size(scores)[1],
-            size(scores)[2] *
-            size(scores)[3] *
-            size(scores)[4] *
-            size(scores)[5],
-        ),
-    )
-    scores = reshape(
-        softmax(temp / scaling_factor, dims = 2),
-        (
-            size(scores)[1],
-            size(scores)[2],
-            size(scores)[3],
-            size(scores)[4],
-            size(scores)[5],
-        ),
-    )
+    scaling_factor = sqrt(sum(size(my_keys, 3)))
+    scores = scores ./ scaling_factor
+    if mask != nothing
+        scores = scores .+ mask
+    end
+
+    orig_sz = size(scores)
+    scores = reshape(scores,
+                        orig_sz[1],
+                        orig_sz[2],
+                        orig_sz[3],
+                        orig_sz[4] *
+                        orig_sz[5],)
+
+    scores = softmax(scores, dims=4)
+    scores = reshape(scores,
+                        orig_sz[1],
+                        orig_sz[2],
+                        orig_sz[3],
+                        orig_sz[4],
+                        orig_sz[5],)
 
     # Get scaled values, summing along key dimensions
     @reduce scaled_values[head, meaning, q_time, q_ins] :=
@@ -167,9 +168,10 @@ end
 
 Flux.@functor Encoder
 
-function (a::Encoder)(query_data::AbstractArray, pos_data::AbstractArray)
+function (a::Encoder)(query_data::AbstractArray, pos_data::AbstractArray;
+                        mask=nothing::Union{Nothing, AbstractArray})
     norm, self_attn = a.norm, a.self_attn
-    sublayer = relu.(query_data + self_attn(norm(query_data), pos_data))
+    sublayer = relu.(query_data + self_attn(norm(query_data), pos_data, mask=mask))
 end
 
 ## Decoder
@@ -196,11 +198,12 @@ Flux.@functor Decoder
 
 function (a::Decoder)(query_data::AbstractArray,
                         key_data::AbstractArray,
-                        pos_data::AbstractArray)
+                        pos_data::AbstractArray;
+                        mask=nothing::Union{Nothing, AbstractArray})
     norm1, self_attn, norm2, cross_attn =
         a.norm1, a.self_attn, a.norm2, a.cross_attn
 
-    sublayer1 = relu.(query_data + self_attn(norm1(query_data), pos_data))
+    sublayer1 = relu.(query_data + self_attn(norm1(query_data), pos_data, mask=mask))
     sublayer2 =
         relu.(sublayer1 + cross_attn(norm2(sublayer1), pos_data, key_data = norm2(key_data)))
 end
@@ -230,21 +233,22 @@ Flux.@functor Transformer
 
 function (a::Transformer)(encoder_input,
                             pos_data;
-                            decoder_input = nothing)
+                            decoder_input = nothing,
+                            mask = nothing)
     encoder, decoder = a.encoder, a.decoder
 
     if decoder_input == nothing
         decoder_input = encoder_input
     end
 
-    encoded_data = encoder_input
-    for e in encoder
-        encoded_data = e(encoded_data, pos_data)
+    encoded_data = encoder[1](encoder_input, pos_data, mask=mask)
+    for i in 2:length(encoder)
+        encoded_data = encoder[i](encoded_data, pos_data)
     end
 
-    output = decoder_input
-    for d in decoder
-        output = d(output, encoded_data, pos_data)
+    output = decoder[1](decoder_input, encoded_data, pos_data, mask=mask)
+    for i in 2:length(decoder)
+        output = decoder[i](output, encoded_data, pos_data)
     end
 
     return output
